@@ -1,0 +1,8 @@
+{
+  "max_epoch": 50,
+  "batch_size": 64,
+  "device": "cuda",
+  "cpu_num_works": 4,
+  "amp": "bfloat16",
+  "max_patient_num": 10
+}
