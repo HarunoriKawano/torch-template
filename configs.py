@@ -11,13 +11,22 @@ class HyperParameters(BaseModel):
 
     max_epoch: int
     batch_size: int
-    device: str
-    cpu_num_works: int
     amp: Optional[Literal["float16", "bfloat16"]] = None
     max_patient_num: Optional[int] = None
 
+    def save(self, path: str) -> None:
+        json_str = self.model_dump_json(indent=2)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(json_str)
+
+    @classmethod
+    def load(cls, path: str) -> "HyperParameters":
+        with open(path, "r", encoding="utf-8") as f:
+            json_data = f.read()
+        return cls.model_validate_json(json_data)
+
 class CoreComponents(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     task_module: TaskModule
     optimizer: Optimizer
@@ -31,7 +40,7 @@ class CoreComponents(BaseModel):
         torch.save(checkpoint, path)
         print(f"Core components saved to {path}")
 
-    def load(self, path: str, device: torch.device):
+    def load(self, path: str, device: str):
         checkpoint = torch.load(path, map_location=device)
 
         self.task_module.load_state_dict(checkpoint["model_state_dict"])

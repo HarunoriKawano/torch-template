@@ -1,16 +1,33 @@
-from typing import Optional
+from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Optional, Protocol, Iterator, TypeVar, TYPE_CHECKING, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict
 import torch
 from pydantic import computed_field
 from torch.optim.lr_scheduler import LRScheduler
 
-from data import SizedIterable
 from configs import HyperParameters
-from metrics import Metrics
+
+if TYPE_CHECKING:
+    # Metricsはメソッド引数の型ヒントとしてのみ使われ、フィールドの型ではないため、
+    # 実行時のimportは不要（states<->metricsの循環importを避けるため遅延させている）
+    from metrics import Metrics
+
+T = TypeVar('T')
+
+@runtime_checkable
+class SizedIterable(Protocol[T]):
+    def __len__(self) -> int:
+        ...
+
+    def __iter__(self) -> Iterator[T]:
+        ...
 
 # TODO バッチ内で完結する値を定義する(入力値やラベルなど)
 class BatchState(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     loss: Optional[torch.Tensor] = None
 
     def to(self, device: str): ...
@@ -55,11 +72,19 @@ class GlobalState(BaseModel):
 
 
 class FitContext(BaseModel):
-    train_dataloader: SizedIterable[BatchState]
-    val_dataloader: SizedIterable[BatchState]
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # pydanticのisinstance検証はパラメータ化ジェネリックを扱えないため、
+    # 型ヒント上はSizedIterable[BatchState]としたいところだが、フィールドでは非パラメータ化で宣言する
+    train_dataloader: SizedIterable
+    val_dataloader: SizedIterable
     global_state: GlobalState
     hyper_parameters: HyperParameters
+    # device/cpu_num_worksは実行環境ごとに異なりうる情報であり、
+    # 実験の再現性を記録するHyperParametersには含めない
+    device: str
     save_dir: str
+    cpu_num_works: int = 4
     current_step: int = 0
     scheduler: Optional[LRScheduler] = None
 

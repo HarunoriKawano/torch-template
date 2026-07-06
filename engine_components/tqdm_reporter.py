@@ -2,13 +2,16 @@ from tqdm import tqdm
 
 from data import SizedIterable
 from states import FitContext, BatchState
+from distributed_utils import is_main_process
 
 class TqdmReporter:
     def __init__(self):
         self.pbar = None
 
     def init_train_bar(self, fit_context: FitContext) -> None:
-        """エポック開始時に新しいプログレスバーを生成する"""
+        """エポック開始時に新しいプログレスバーを生成する（chief processのみ表示）"""
+        if not is_main_process():
+            return
         # leave=True にすると、終わったバーが画面に残ります（学習履歴として見やすい）
         self.pbar = tqdm(
             total=len(fit_context.train_dataloader),
@@ -28,7 +31,9 @@ class TqdmReporter:
             self.pbar.set_postfix({"loss": f"{batch_state.loss}"})
 
     def init_val_bar(self, fit_context: FitContext) -> None:
-        """エポック開始時に新しいプログレスバーを生成する"""
+        """エポック開始時に新しいプログレスバーを生成する（chief processのみ表示）"""
+        if not is_main_process():
+            return
         # leave=True にすると、終わったバーが画面に残ります（学習履歴として見やすい）
         self.pbar = tqdm(
             total=len(fit_context.val_dataloader),
@@ -48,7 +53,9 @@ class TqdmReporter:
             self.pbar.set_postfix({"loss": f"{batch_state.loss}"})
 
     def init_test_bar(self, test_dataloader: SizedIterable[BatchState]) -> None:
-        """エポック開始時に新しいプログレスバーを生成する"""
+        """エポック開始時に新しいプログレスバーを生成する（chief processのみ表示）"""
+        if not is_main_process():
+            return
         # leave=True にすると、終わったバーが画面に残ります（学習履歴として見やすい）
         self.pbar = tqdm(
             total=len(test_dataloader),
