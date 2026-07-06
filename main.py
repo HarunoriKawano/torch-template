@@ -27,12 +27,18 @@ def main():
         "x": list(np.random.randn(200, 1, 28, 28)),
         "label": np.random.randint(0, 10, size=200),
     })
+    test_df = pd.DataFrame({
+        "x": list(np.random.randn(200, 1, 28, 28)),
+        "label": np.random.randint(0, 10, size=200),
+    })
     train_dataset = CustomizedDataset(train_df)
     val_dataset = CustomizedDataset(val_df)
+    test_dataset = CustomizedDataset(test_df)
 
     # get_dataloaderはDDP環境下では自動的にDistributedSamplerを使う
     train_dataloader = get_dataloader(train_dataset, hyper_parameters, shuffle=True, cpu_num_works=cpu_num_works)
     val_dataloader = get_dataloader(val_dataset, hyper_parameters, shuffle=False, cpu_num_works=cpu_num_works)
+    test_dataloader = get_dataloader(test_dataset, hyper_parameters, shuffle=False, cpu_num_works=cpu_num_works)
 
     task_module = TaskModule()
     optimizer = Adam(task_module.parameters(), lr=1e-3)
@@ -53,7 +59,9 @@ def main():
         engine = Engine(core_components)
         engine.system_check(fit_context)
         engine.fit(fit_context)
-        engine.test()
+
+        metrics = engine.test(test_dataloader, hyper_parameters, device)
+        print(metrics.compute("test"))
     finally:
         cleanup_distributed()
 
