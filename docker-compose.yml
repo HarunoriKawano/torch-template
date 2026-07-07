@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  ml-env:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: # プロジェクトに合わせて変更
+    tty: true
+    command: jupyter lab --ip=0.0.0.0 --allow-root --LabApp.token='' --no-browser
+    ports:
+      - "8888:8888" # Jupyter
+      - "6006:6006" # TensorBoard
+    volumes:
+      # ホストの各フォルダをコンテナ内にマウント（同期）
+      - ./src:/workspace/src
+      - ./notebooks:/workspace/notebooks
+      - ./data:/workspace/data
+      - ./save_dir:/workspace/save_dir
+      # pipキャッシュ用のボリューム（2回目以降のライブラリ追加を爆速にする）
+      - pip-cache:/root/.cache/pip
+    environment:
+      - PIP_CACHE_DIR=/root/.cache/pip
+      # Jupyter設定ファイルの出力先などを固定
+      - JUPYTER_CONFIG_DIR=/workspace/.jupyter
+    # PyTorchのマルチプロセスデータロード時のメモリ不足エラーを防止
+    shm_size: '64gb'
+    # GPUの有効化（NVIDIA Container Toolkitがホストに入っていること）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  pip-cache:

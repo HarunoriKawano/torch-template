@@ -11,21 +11,31 @@ PyTorch の学習・検証・テストループ（fit / test / system_check）�
 
 ```
 .
-├── main.py                          # エントリーポイント
+├── docker-compose.yml                # JupyterLab起動用のDocker Compose定義
+├── docker/
+│   ├── Dockerfile                    # 学習環境のDockerイメージ定義
+│   └── requirements.txt              # Dockerイメージにインストールする依存パッケージ
 ├── templates/
-│   └── hyper_parameters.json        # HyperParametersの静的設定ファイル（main.pyが読み込む）
-├── configs.py                       # HyperParameters, CoreComponents（モデル・optimizerの保存/読込）
-├── states.py                        # BatchState, GlobalState, FitContext
-├── data.py                          # Dataset, collate_fn, DataLoader 生成
-├── task_module.py                   # TaskModule（モデルのラッパー：学習/検証/推論ロジック）
-├── metrics.py                       # Metrics（評価指標の蓄積・計算）
-├── engine.py                        # Engine（fit / test / system_check ループ本体）
-├── distributed_utils.py             # DDP (分散学習) 用のヘルパー関数
-└── engine_components/
-    ├── console_reporter.py          # 学習開始時のサマリ表示
-    ├── logging.py                   # チェックポイント・ログCSVの保存/読込
-    └── tqdm_reporter.py             # 進捗バー表示（任意）
+│   └── hyper_parameters.json         # HyperParametersの静的設定ファイル（main.pyが読み込む）
+├── data/                             # データセット配置用（コンテナにマウント）
+├── notebooks/                        # Jupyter Notebook配置用（コンテナにマウント）
+├── outputs/                          # チェックポイント・ログの出力先
+└── src/
+    ├── main.py                       # エントリーポイント
+    ├── configs.py                    # HyperParameters, CoreComponents（モデル・optimizerの保存/読込）
+    ├── states.py                     # BatchState, GlobalState, FitContext
+    ├── data.py                       # Dataset, collate_fn, DataLoader 生成
+    ├── task_module.py                # TaskModule（モデルのラッパー：学習/検証/推論ロジック）
+    ├── metrics.py                    # Metrics（評価指標の蓄積・計算）
+    ├── engine.py                     # Engine（fit / test / system_check ループ本体）
+    ├── distributed_utils.py          # DDP (分散学習) 用のヘルパー関数
+    └── engine_components/
+        ├── console_reporter.py       # 学習開始時のサマリ表示
+        ├── logging.py                # チェックポイント・ログCSVの保存/読込
+        └── tqdm_reporter.py          # 進捗バー表示（任意）
 ```
+
+作業は `src` ディレクトリに移動してから行います（`main.py` 内の相対パスや import は `src` がカレントディレクトリであることを前提にしています）。
 
 ## アーキテクチャの流れ
 
@@ -108,79 +118,81 @@ import torch
 from torch import nn
 
 from states import BatchState, FitContext
+
+
 # 1. で定義したモデル
 # from models import Generator, Discriminator
 
 
 class TaskModule(nn.Module):
-    generator_file_name = "generator.pth"
-    discriminator_file_name = "discriminator.pth"
+   generator_file_name = "generator.pth"
+   discriminator_file_name = "discriminator.pth"
 
-    def __init__(self):
-        super().__init__()
-        self.preprocessing = Preprocessing()   # 例: 正規化など、パラメータを持たない前処理
-        self.generator = Generator()
-        self.discriminator = Discriminator()
-        self.criterion = nn.BCEWithLogitsLoss()
+   def __init__(self):
+      super().__init__()
+      self.preprocessing = Preprocessing()  # 例: 正規化など、パラメータを持たない前処理
+      self.generator = Generator()
+      self.discriminator = Discriminator()
+      self.criterion = nn.BCEWithLogitsLoss()
 
-    def forward(
-        self, batch_state: BatchState, fit_context: Optional[FitContext],
-        mode: Literal["train", "val", "test"]
-    ) -> BatchState:
-        if mode == "train":
-            return self.train_step(batch_state, fit_context)
-        if mode == "val":
-            return self.val_step(batch_state)
-        if mode == "test":
-            return self.test_step(batch_state)
-        raise ValueError(f"unknown mode: {mode}")
+   def forward(
+           self, batch_state: BatchState, fit_context: Optional[FitContext],
+           mode: Literal["train", "val", "test"]
+   ) -> BatchState:
+      if mode == "train":
+         return self.train_step(batch_state, fit_context)
+      if mode == "val":
+         return self.val_step(batch_state)
+      if mode == "test":
+         return self.test_step(batch_state)
+      raise ValueError(f"unknown mode: {mode}")
 
-    def train_step(self, batch_state: BatchState, fit_context: FitContext) -> BatchState:
-        x = self.preprocessing(batch_state.inputs)
-        fake = self.generator(x)
+   def train_step(self, batch_state: BatchState, fit_context: FitContext) -> BatchState:
+      x = self.preprocessing(batch_state.inputs)
+      fake = self.generator(x)
 
-        real_logits = self.discriminator(batch_state.inputs)
-        fake_logits = self.discriminator(fake.detach())
-        d_loss = (
-            self.criterion(real_logits, torch.ones_like(real_logits))
-            + self.criterion(fake_logits, torch.zeros_like(fake_logits))
-        )
+      real_logits = self.discriminator(batch_state.inputs)
+      fake_logits = self.discriminator(fake.detach())
+      d_loss = (
+              self.criterion(real_logits, torch.ones_like(real_logits))
+              + self.criterion(fake_logits, torch.zeros_like(fake_logits))
+      )
 
-        g_logits = self.discriminator(fake)
-        g_loss = self.criterion(g_logits, torch.ones_like(g_logits))
+      g_logits = self.discriminator(fake)
+      g_loss = self.criterion(g_logits, torch.ones_like(g_logits))
 
-        # Engine は batch_state.loss を1つだけ backward するため、
-        # generator/discriminator を別々に最適化したい場合は、ここで個別に
-        # optimizer.step() まで完結させる、もしくは合算した loss を返すなど
-        # 設計に応じて調整する
-        batch_state.loss = g_loss + d_loss
-        return batch_state
+      # Engine は batch_state.loss を1つだけ backward するため、
+      # generator/discriminator を別々に最適化したい場合は、ここで個別に
+      # optimizer.step() まで完結させる、もしくは合算した loss を返すなど
+      # 設計に応じて調整する
+      batch_state.loss = g_loss + d_loss
+      return batch_state
 
-    def val_step(self, batch_state: BatchState) -> BatchState:
-        with torch.no_grad():
-            x = self.preprocessing(batch_state.inputs)
-            batch_state.preds = self.generator(x)
-        return batch_state
+   def val_step(self, batch_state: BatchState) -> BatchState:
+      with torch.no_grad():
+         x = self.preprocessing(batch_state.inputs)
+         batch_state.preds = self.generator(x)
+      return batch_state
 
-    # test_step は val_step を再利用するのでそのままでよい
+   # test_step は val_step を再利用するのでそのままでよい
 
-    def predict(self, x: torch.Tensor) -> Any:
-        with torch.no_grad():
-            return self.generator(self.preprocessing(x))
+   def predict(self, x: torch.Tensor) -> Any:
+      with torch.no_grad():
+         return self.generator(self.preprocessing(x))
 
-    def save(self, save_dir: str) -> None:
-        # 保存対象は学習済みパラメータを持つ generator / discriminator のみ
-        os.makedirs(save_dir, exist_ok=True)
-        torch.save(self.generator.state_dict(), os.path.join(save_dir, self.generator_file_name))
-        torch.save(self.discriminator.state_dict(), os.path.join(save_dir, self.discriminator_file_name))
+   def save(self, save_dir: str) -> None:
+      # 保存対象は学習済みパラメータを持つ generator / discriminator のみ
+      os.makedirs(save_dir, exist_ok=True)
+      torch.save(self.generator.state_dict(), os.path.join(save_dir, self.generator_file_name))
+      torch.save(self.discriminator.state_dict(), os.path.join(save_dir, self.discriminator_file_name))
 
-    def load(self, save_dir: str) -> None:
-        self.generator.load_state_dict(
-            torch.load(os.path.join(save_dir, self.generator_file_name), map_location="cpu")
-        )
-        self.discriminator.load_state_dict(
-            torch.load(os.path.join(save_dir, self.discriminator_file_name), map_location="cpu")
-        )
+   def load(self, save_dir: str) -> None:
+      self.generator.load_state_dict(
+         torch.load(os.path.join(save_dir, self.generator_file_name), map_location="cpu")
+      )
+      self.discriminator.load_state_dict(
+         torch.load(os.path.join(save_dir, self.discriminator_file_name), map_location="cpu")
+      )
 ```
 
 ### 3. `data.py` — データセットを作成する
@@ -246,11 +258,11 @@ from states import BatchState
 
 
 def dataset_collate_fn(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> BatchState:
-    inputs, labels = zip(*batch)
-    return BatchState(
-        inputs=torch.stack(inputs),
-        labels=torch.stack(labels),
-    )
+   inputs, labels = zip(*batch)
+   return BatchState(
+      inputs=torch.stack(inputs),
+      labels=torch.stack(labels),
+   )
 ```
 
 `get_dataloader` / `ShortDataLoader` はそのまま利用できます。
@@ -267,32 +279,32 @@ from distributed_utils import all_reduce_sum_
 
 
 class Metrics:
-    """
-    評価指標を計算するためのインターフェース。
-    バッチごとに状態を蓄積し、エポックの最後に計算・リセットする。
-    """
+   """
+   評価指標を計算するためのインターフェース。
+   バッチごとに状態を蓄積し、エポックの最後に計算・リセットする。
+   """
 
-    def __init__(self):
-        self._correct: dict[str, int] = {"val": 0, "test": 0}
-        self._total: dict[str, int] = {"val": 0, "test": 0}
+   def __init__(self):
+      self._correct: dict[str, int] = {"val": 0, "test": 0}
+      self._total: dict[str, int] = {"val": 0, "test": 0}
 
-    def update(self, batch_state: BatchState, mode: Literal["val", "test"]) -> None:
-        self._correct[mode] += (batch_state.preds == batch_state.labels).sum().item()
-        self._total[mode] += batch_state.labels.numel()
+   def update(self, batch_state: BatchState, mode: Literal["val", "test"]) -> None:
+      self._correct[mode] += (batch_state.preds == batch_state.labels).sum().item()
+      self._total[mode] += batch_state.labels.numel()
 
-    def compute(self, mode: Literal["val", "test"]) -> dict[str, Any]:
-        # DDP使用時、_correct/_totalはプロセスごとに別々の値を持つため、
-        # 全プロセス分を合計してから指標を計算する
-        correct = torch.tensor(self._correct[mode], dtype=torch.float64)
-        total = torch.tensor(self._total[mode], dtype=torch.float64)
-        all_reduce_sum_(correct)
-        all_reduce_sum_(total)
-        accuracy = (correct / total).item() if total > 0 else 0.0
-        return {"accuracy": accuracy}
+   def compute(self, mode: Literal["val", "test"]) -> dict[str, Any]:
+      # DDP使用時、_correct/_totalはプロセスごとに別々の値を持つため、
+      # 全プロセス分を合計してから指標を計算する
+      correct = torch.tensor(self._correct[mode], dtype=torch.float64)
+      total = torch.tensor(self._total[mode], dtype=torch.float64)
+      all_reduce_sum_(correct)
+      all_reduce_sum_(total)
+      accuracy = (correct / total).item() if total > 0 else 0.0
+      return {"accuracy": accuracy}
 
-    def reset(self) -> None:
-        self._correct = {"val": 0, "test": 0}
-        self._total = {"val": 0, "test": 0}
+   def reset(self) -> None:
+      self._correct = {"val": 0, "test": 0}
+      self._total = {"val": 0, "test": 0}
 ```
 
 ### 6. `states.py` — `GlobalState._metric_update`
@@ -343,62 +355,62 @@ from distributed_utils import setup_distributed, cleanup_distributed
 
 
 def main():
-    rank, local_rank = setup_distributed()
-    device = f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu"
-    cpu_num_works = 4
+   rank, local_rank = setup_distributed()
+   device = f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu"
+   cpu_num_works = 4
 
-    hyper_parameters = HyperParameters.load("templates/hyper_parameters.json")
+   hyper_parameters = HyperParameters.load("../templates/hyper_parameters.json")
 
-    # TODO: 実データ（CSV読み込みなど）に置き換える
-    train_df = pd.DataFrame({
-        "x": list(np.random.randn(1000, 1, 28, 28)),
-        "label": np.random.randint(0, 10, size=1000),
-    })
-    val_df = pd.DataFrame({
-        "x": list(np.random.randn(200, 1, 28, 28)),
-        "label": np.random.randint(0, 10, size=200),
-    })
-    test_df = pd.DataFrame({
-        "x": list(np.random.randn(200, 1, 28, 28)),
-        "label": np.random.randint(0, 10, size=200),
-    })
-    train_dataset = CustomizedDataset(train_df)
-    val_dataset = CustomizedDataset(val_df)
-    test_dataset = CustomizedDataset(test_df)
+   # TODO: 実データ（CSV読み込みなど）に置き換える
+   train_df = pd.DataFrame({
+      "x": list(np.random.randn(1000, 1, 28, 28)),
+      "label": np.random.randint(0, 10, size=1000),
+   })
+   val_df = pd.DataFrame({
+      "x": list(np.random.randn(200, 1, 28, 28)),
+      "label": np.random.randint(0, 10, size=200),
+   })
+   test_df = pd.DataFrame({
+      "x": list(np.random.randn(200, 1, 28, 28)),
+      "label": np.random.randint(0, 10, size=200),
+   })
+   train_dataset = CustomizedDataset(train_df)
+   val_dataset = CustomizedDataset(val_df)
+   test_dataset = CustomizedDataset(test_df)
 
-    # get_dataloaderはDDP環境下では自動的にDistributedSamplerを使う
-    train_dataloader = get_dataloader(train_dataset, hyper_parameters, shuffle=True, cpu_num_works=cpu_num_works)
-    val_dataloader = get_dataloader(val_dataset, hyper_parameters, shuffle=False, cpu_num_works=cpu_num_works)
-    test_dataloader = get_dataloader(test_dataset, hyper_parameters, shuffle=False, cpu_num_works=cpu_num_works)
+   # get_dataloaderはDDP環境下では自動的にDistributedSamplerを使う
+   train_dataloader = get_dataloader(train_dataset, hyper_parameters, shuffle=True, cpu_num_works=cpu_num_works)
+   val_dataloader = get_dataloader(val_dataset, hyper_parameters, shuffle=False, cpu_num_works=cpu_num_works)
+   test_dataloader = get_dataloader(test_dataset, hyper_parameters, shuffle=False, cpu_num_works=cpu_num_works)
 
-    task_module = TaskModule()
-    optimizer = Adam(task_module.parameters(), lr=1e-3)
-    core_components = CoreComponents(task_module=task_module, optimizer=optimizer)
+   task_module = TaskModule()
+   optimizer = Adam(task_module.parameters(), lr=1e-3)
+   core_components = CoreComponents(task_module=task_module, optimizer=optimizer)
 
-    global_state = GlobalState(best_metric=0.0)
-    fit_context = FitContext(
-        train_dataloader=train_dataloader,
-        val_dataloader=val_dataloader,
-        global_state=global_state,
-        hyper_parameters=hyper_parameters,
-        device=device,
-        cpu_num_works=cpu_num_works,
-        save_dir="./checkpoints",
-    )
+   global_state = GlobalState(best_metric=0.0)
+   fit_context = FitContext(
+      train_dataloader=train_dataloader,
+      val_dataloader=val_dataloader,
+      global_state=global_state,
+      hyper_parameters=hyper_parameters,
+      device=device,
+      cpu_num_works=cpu_num_works,
+      save_dir="../outputs/",
+   )
 
-    try:
-        engine = Engine(core_components)
-        engine.system_check(fit_context)
-        engine.fit(fit_context)
+   try:
+      engine = Engine(core_components)
+      engine.system_check(fit_context)
+      engine.fit(fit_context)
 
-        metrics = engine.test(test_dataloader, hyper_parameters, device)
-        print(metrics.compute("test"))
-    finally:
-        cleanup_distributed()
+      metrics = engine.test(test_dataloader, hyper_parameters, device)
+      print(metrics.compute("test"))
+   finally:
+      cleanup_distributed()
 
 
 if __name__ == "__main__":
-    main()
+   main()
 ```
 
 ## DDP（分散学習）対応
@@ -415,7 +427,11 @@ if __name__ == "__main__":
 
 ### 実行方法
 
+以下はいずれも `src` ディレクトリに移動してから実行してください。
+
 ```bash
+cd src
+
 # シングルGPU / CPU
 python main.py
 
@@ -428,13 +444,25 @@ torchrun --nnodes=2 --nproc_per_node=4 --rdzv_backend=c10d --rdzv_endpoint=<マ�
 
 ## セットアップ
 
+### Dockerを使う場合
+
 ```bash
-pip install -r requirements.txt
+docker compose up -d --build
+```
+
+起動すると JupyterLab（`http://localhost:8888`）と TensorBoard（`6006`番ポート）が利用できます。
+`src` / `notebooks` / `data` はコンテナ内にマウントされ、ホスト側での編集がそのまま反映されます。
+
+### ローカル環境の場合
+
+```bash
+pip install -r docker/requirements.txt
 ```
 
 ## 実行
 
 ```bash
+cd src
 python main.py
 ```
 

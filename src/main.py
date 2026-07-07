@@ -16,7 +16,7 @@ def main():
     device = f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu"
     cpu_num_works = 4
 
-    hyper_parameters = HyperParameters.load("templates/hyper_parameters.json")
+    hyper_parameters = HyperParameters.load("../templates/hyper_parameters.json")
 
     # TODO: 実データ（CSV読み込みなど）に置き換える
     train_df = pd.DataFrame({
@@ -52,7 +52,7 @@ def main():
         hyper_parameters=hyper_parameters,
         device=device,
         cpu_num_works=cpu_num_works,
-        save_dir="./checkpoints",
+        save_dir="../outputs/",
     )
 
     try:

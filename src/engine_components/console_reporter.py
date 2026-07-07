@@ -1,6 +1,6 @@
-from configs import CoreComponents
-from states import FitContext
-from distributed_utils import is_main_process
+from src.configs import CoreComponents
+from src.states import FitContext
+from src.distributed_utils import is_main_process
 
 
 class ConsoleReporter:

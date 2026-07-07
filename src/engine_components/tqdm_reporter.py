@@ -1,8 +1,8 @@
 from tqdm import tqdm
 
-from data import SizedIterable
-from states import FitContext, BatchState
-from distributed_utils import is_main_process
+from src.data import SizedIterable
+from src.states import FitContext, BatchState
+from src.distributed_utils import is_main_process
 
 class TqdmReporter:
     def __init__(self):

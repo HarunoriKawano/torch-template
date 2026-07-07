@@ -3,6 +3,7 @@ from typing import Optional, Literal
 from pydantic import BaseModel, ConfigDict
 import torch
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 
 from task_module import TaskModule
 
@@ -30,12 +31,15 @@ class CoreComponents(BaseModel):
 
     task_module: TaskModule
     optimizer: Optimizer
+    scheduler: Optional[LRScheduler] = None
 
     def save(self, path: str):
         checkpoint = {
             "model_state_dict": self.task_module.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
         }
+        if self.scheduler is not None:
+            checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
 
         torch.save(checkpoint, path)
         print(f"Core components saved to {path}")
@@ -45,4 +49,6 @@ class CoreComponents(BaseModel):
 
         self.task_module.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if self.scheduler is not None:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         print(f"Core components loaded from {path}")

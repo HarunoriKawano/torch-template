@@ -1,0 +1,20 @@
+/data/*
+!/data/.gitkeep
+
+/outputs/*
+!/outputs/.gitkeep
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebookの自動保存ファイル
+.ipynb_checkpoints/
+
+# =========================
+# 環境変数・機密情報
+# =========================
+# パスワードやAPIキーなどを書いた環境変数ファイル
+.env
+.env.*
+*.secret

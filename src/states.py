@@ -5,7 +5,6 @@ from typing import Optional, Protocol, Iterator, TypeVar, TYPE_CHECKING, runtime
 from pydantic import BaseModel, ConfigDict
 import torch
 from pydantic import computed_field
-from torch.optim.lr_scheduler import LRScheduler
 
 from configs import HyperParameters
 
@@ -74,19 +73,14 @@ class GlobalState(BaseModel):
 class FitContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # pydanticのisinstance検証はパラメータ化ジェネリックを扱えないため、
-    # 型ヒント上はSizedIterable[BatchState]としたいところだが、フィールドでは非パラメータ化で宣言する
     train_dataloader: SizedIterable
     val_dataloader: SizedIterable
     global_state: GlobalState
     hyper_parameters: HyperParameters
-    # device/cpu_num_worksは実行環境ごとに異なりうる情報であり、
-    # 実験の再現性を記録するHyperParametersには含めない
     device: str
     save_dir: str
     cpu_num_works: int = 4
     current_step: int = 0
-    scheduler: Optional[LRScheduler] = None
 
     @computed_field
     @property

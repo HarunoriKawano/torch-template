@@ -103,8 +103,8 @@ class Engine:
             batch_state.loss.backward()
             self.core_components.optimizer.step()
 
-        if fit_context.scheduler:
-            fit_context.scheduler.step()
+        if self.core_components.scheduler:
+            self.core_components.scheduler.step()
 
         # post process
         batch_state.to("cpu")

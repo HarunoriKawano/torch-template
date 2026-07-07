@@ -2,10 +2,10 @@ import pandas as pd
 import os
 from pathlib import Path
 
-from states import FitContext
-from metrics import Metrics
-from configs import CoreComponents
-from distributed_utils import is_main_process
+from src.states import FitContext
+from src.metrics import Metrics
+from src.configs import CoreComponents
+from src.distributed_utils import is_main_process
 
 class Logging:
     epoch_log_file_name = "epoch_log.csv"
