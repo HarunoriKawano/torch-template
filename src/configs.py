@@ -26,6 +26,20 @@ class HyperParameters(BaseModel):
             json_data = f.read()
         return cls.model_validate_json(json_data)
 
+class ModelParameters(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    def save(self, path: str) -> None:
+        json_str = self.model_dump_json(indent=2)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(json_str)
+
+    @classmethod
+    def load(cls, path: str) -> "ModelParameters":
+        with open(path, "r", encoding="utf-8") as f:
+            json_data = f.read()
+        return cls.model_validate_json(json_data)
+
 class CoreComponents(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
@@ -52,3 +66,4 @@ class CoreComponents(BaseModel):
         if self.scheduler is not None:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         print(f"Core components loaded from {path}")
+

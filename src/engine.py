@@ -45,7 +45,7 @@ class Engine:
         if is_main_process():
             os.makedirs(fit_context.save_dir, exist_ok=True)
         barrier()
-        self.logging.save_hyper_parameters(fit_context)
+        self.logging.save_parameters(self.core_components, fit_context)
         self.logging.load_checkpoint(self.core_components, fit_context)
         self.console_reporter.show_fit_detail(self.core_components, fit_context)
 
@@ -55,6 +55,7 @@ class Engine:
             self._epoch_loop(fit_context)
 
     def _epoch_loop(self, fit_context: FitContext) -> None:
+        self.metrics.reset()
         # train loop
         set_dataloader_epoch(fit_context.train_dataloader, fit_context.global_state.current_epoch)
         self.model.train()
@@ -65,7 +66,6 @@ class Engine:
         fit_context.one_epoch()
 
         # val loop
-        self.metrics.reset()
         self.model.eval()
         self.tqdm_reporter.init_val_bar(fit_context)
         for batch_state in fit_context.val_dataloader:
@@ -109,6 +109,7 @@ class Engine:
         # post process
         batch_state.to("cpu")
         fit_context.one_step()
+        self.metrics.update(batch_state, "train")
         self.tqdm_reporter.set_train_metrics(batch_state)
 
     def _val_step(self, fit_context: FitContext, batch_state: BatchState) -> None:

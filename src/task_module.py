@@ -5,6 +5,8 @@ from typing import Any, Literal, Optional, TYPE_CHECKING
 import torch
 from torch import nn
 
+from configs import ModelParameters
+
 if TYPE_CHECKING:
     # BatchState/FitContextはメソッドの型ヒントとしてのみ使われるため、
     # 実行時のimportは不要（configs->task_module->states->...の循環importを避けるため遅延させている）
@@ -12,6 +14,10 @@ if TYPE_CHECKING:
 
 # TODO modelをラップするモジュールを定義し、lossの計算や予測値の出力までを完結させる
 class TaskModule(nn.Module):
+    def __init__(self, model_parameters: ModelParameters):
+        super().__init__()
+        self.model_parameters = model_parameters
+
 
     def forward(
         self, batch_state: BatchState, fit_context: Optional[FitContext],
