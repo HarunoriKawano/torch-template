@@ -1,6 +1,0 @@
-{
-  "max_epoch": 50,
-  "batch_size": 64,
-  "amp": "bfloat16",
-  "max_patient_num": 10
-}

@@ -1,6 +1,0 @@
-torch>=2.12.1
-pandas>=3.0.3
-pydantic>=2.13.4
-tqdm>=4.68.3
-jupyterlab>=4.6.1
-tensorboard>=2.21.0
